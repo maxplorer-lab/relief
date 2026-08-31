@@ -64,6 +64,58 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     return ingest(request, env);
   }
 
+  if (path === "/api/scan" && request.method === "POST") {
+    if (!user.is_admin) return jsonError(403, "Admin only");
+    
+    let truncated = true;
+    let cursor: string | undefined = undefined;
+    let addedCount = 0;
+
+    while (truncated) {
+      const listed = await env.MUSIC.list({ cursor });
+      truncated = listed.truncated;
+      cursor = listed.cursor;
+
+      for (const object of listed.objects) {
+        const key = object.key;
+        if (key.startsWith("covers/")) continue;
+
+        const existing = await env.DB.prepare("SELECT id FROM tracks WHERE r2_key = ?").bind(key).first();
+        if (existing) continue;
+
+        const parts = key.split("/");
+        const fileName = parts[parts.length - 1] || "";
+        const albumName = parts.length > 2 ? decodeURIComponent(parts[parts.length - 2]) : "Unknown Album";
+        const artistName = parts.length > 3 ? decodeURIComponent(parts[parts.length - 3]) : "Unknown Artist";
+        
+        const suffix = fileName.split(".").pop() || "mp3";
+        const title = fileName.replace(/\.[^/.]+$/, "");
+
+        const artistId = await getOrCreateArtist(env, artistName);
+        const albumIdNum = await getOrCreateAlbum(env, artistId, albumName, null, null);
+
+        await env.DB.prepare(
+          `INSERT INTO tracks (album_id, artist_id, title, track_no, disc_no, year, genre, duration_sec, size_bytes, suffix, content_type, r2_key, play_count, created_at)
+           VALUES (?, ?, ?, 0, 1, NULL, NULL, 0, ?, ?, ?, ?, 0, ?)`
+        ).bind(
+          albumIdNum,
+          artistId,
+          title,
+          object.size,
+          suffix,
+          suffix === "flac" ? "audio/flac" : "audio/mpeg",
+          key,
+          Date.now()
+        ).run();
+
+        await recount(env, artistId, albumIdNum);
+        addedCount++;
+      }
+    }
+
+    return jsonResponse({ ok: true, added: addedCount });
+  }
+
   if (path === "/api/library") {
     const { results: albums } = await env.DB.prepare(
       `SELECT al.id, al.name, ar.name AS artist, al.year, al.song_count, al.duration_sec, al.genre
