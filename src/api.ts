@@ -83,27 +83,50 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
         const existing = await env.DB.prepare("SELECT id FROM tracks WHERE r2_key = ?").bind(key).first();
         if (existing) continue;
 
-        const parts = key.split("/");
-        const fileName = parts[parts.length - 1] || "";
-        const albumName = parts.length > 2 ? decodeURIComponent(parts[parts.length - 2]) : "Unknown Album";
-        const artistName = parts.length > 3 ? decodeURIComponent(parts[parts.length - 3]) : "Unknown Artist";
-        
-        const suffix = fileName.split(".").pop() || "mp3";
-        const title = fileName.replace(/\.[^/.]+$/, "");
+        const fileObj = await env.MUSIC.get(key);
+        if (!fileObj) continue;
 
-        const artistId = await getOrCreateArtist(env, artistName);
-        const albumIdNum = await getOrCreateAlbum(env, artistId, albumName, null, null);
+        const headBuf = await fileObj.arrayBuffer();
+        const head = new Uint8Array(headBuf.slice(0, 512 * 1024));
+        const filenameFallback = key.split("/").pop() || "track.mp3";
+        const tags = { ...guessFromFilename(filenameFallback), ...parseTags(head) };
+
+        const title = tags.title || filenameFallback.replace(/\.[^/.]+$/, "");
+        const artist = tags.artist || "Unknown Artist";
+        const album = tags.album || "Unknown Album";
+        const trackNo = tags.track || 0;
+        const year = tags.year || null;
+        const genre = tags.genre || null;
+        const duration = tags.duration || 0;
+
+        const suffix = suffixOf(filenameFallback);
+        const artistId = await getOrCreateArtist(env, artist);
+        const albumIdNum = await getOrCreateAlbum(env, artistId, album, year, genre);
+
+        let coverKey: string | null = null;
+        if (tags.cover) {
+          coverKey = `covers/al-${albumIdNum}`;
+          await env.MUSIC.put(coverKey, tags.cover.bytes, {
+            httpMetadata: { contentType: tags.cover.mime },
+          });
+          await env.DB.prepare("UPDATE albums SET cover_key = COALESCE(cover_key, ?) WHERE id = ?").bind(coverKey, albumIdNum).run();
+          await env.DB.prepare("UPDATE artists SET cover_key = COALESCE(cover_key, ?) WHERE id = ?").bind(coverKey, artistId).run();
+        }
 
         await env.DB.prepare(
           `INSERT INTO tracks (album_id, artist_id, title, track_no, disc_no, year, genre, duration_sec, size_bytes, suffix, content_type, r2_key, play_count, created_at)
-           VALUES (?, ?, ?, 0, 1, NULL, NULL, 0, ?, ?, ?, ?, 0, ?)`
+           VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 0, ?)`
         ).bind(
           albumIdNum,
           artistId,
           title,
+          trackNo,
+          year,
+          genre,
+          duration,
           object.size,
           suffix,
-          suffix === "flac" ? "audio/flac" : "audio/mpeg",
+          contentTypeFor(suffix),
           key,
           Date.now()
         ).run();
