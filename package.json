@@ -1,0 +1,20 @@
+{
+  "name": "relief",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal OpenSubsonic music server on Cloudflare Workers + D1 + R2",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate": "wrangler d1 migrations apply DB --remote",
+    "cf-typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "typescript": "^5.8.0",
+    "wrangler": "^4.28.0"
+  }
+}

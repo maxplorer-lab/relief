@@ -1,0 +1,11 @@
+# Copy to .dev.vars for `wrangler dev`. Never commit .dev.vars.
+# wrangler secret put NAME  — for production
+
+AUTH_SECRET = "change-me-to-a-long-random-string"
+SETUP_SECRET = "change-me-setup-token"
+
+# Optional. Only needed for browser presigned PUTs to R2 (files >100 MB).
+# Streaming uses the MUSIC binding and does not need these.
+R2_ACCOUNT_ID = ""
+R2_ACCESS_KEY_ID = ""
+R2_SECRET_ACCESS_KEY = ""

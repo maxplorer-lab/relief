@@ -1,0 +1,36 @@
+# Relief — OpenSubsonic server on Workers + D1 + R2
+# Fill the three YOUR_* placeholders, then:
+#   npx wrangler d1 migrations apply DB --remote
+#   npx wrangler secret put AUTH_SECRET
+#   npx wrangler secret put SETUP_SECRET
+#   npx wrangler secret put R2_ACCOUNT_ID
+#   npx wrangler secret put R2_ACCESS_KEY_ID
+#   npx wrangler secret put R2_SECRET_ACCESS_KEY
+#   npx wrangler deploy
+
+name = "relief"
+main = "src/index.ts"
+compatibility_date = "2026-04-28"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+SERVER_NAME = "Relief"
+SERVER_VERSION = "0.1.0"
+MUSIC_FOLDER_NAME = "Music"
+# Optional. Used only for S3-style presigned uploads (large FLACs).
+# Leave empty to upload through the Worker binding (100 MB per file).
+R2_BUCKET_NAME = "YOUR_R2_BUCKET_NAME"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "YOUR_D1_DATABASE_NAME"
+database_id = "YOUR_D1_DATABASE_ID"
+
+[[r2_buckets]]
+binding = "MUSIC"
+bucket_name = "YOUR_R2_BUCKET_NAME"
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+run_worker_first = true
