@@ -20,8 +20,8 @@ MUSIC_FOLDER_NAME = "Music"
 # Optional. Used only for S3-style presigned uploads (large FLACs).
 # Leave empty to upload through the Worker binding (100 MB per file).
 R2_BUCKET_NAME = "resources"
-AUTH_SECRET=ab4d1cdb2e2af35f6d64818a9be422f4f9d348440d22b5bc0eaf24d4f3f53225
-SETUP_SECRET=3e06298f0447e3570034ea1a88c3313d1e18ae21c8860611963742737cadf0e4
+AUTH_SECRET= "ab4d1cdb2e2af35f6d64818a9be422f4f9d348440d22b5bc0eaf24d4f3f53225"
+SETUP_SECRET= "3e06298f0447e3570034ea1a88c3313d1e18ae21c8860611963742737cadf0e4"
 
 
 [[d1_databases]]
