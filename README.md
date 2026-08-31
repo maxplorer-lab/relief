@@ -1,4 +1,4 @@
-# Relief
+# Relief relief
 
 Private OpenSubsonic music server for two people. Runs entirely on the Cloudflare free tier: **Workers + D1 + R2**. FLAC and MP3 only. Works with [Tempus](https://f-droid.org/packages/com.eddyizm.degoogled.tempus/) and other Subsonic clients.
 
