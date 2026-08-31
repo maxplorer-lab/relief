@@ -13,11 +13,11 @@ export class SubsonicError extends Error {
 
 export function xmlEscape(s: string): string {
   return s
-    .replace(/&/g, "&")
-    .replace(/</g, "<")
-    .replace(/>/g, ">")
-    .replace(/"/g, """)
-    .replace(/'/g, "'");
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
 }
 
 function isPlainObject(v: unknown): v is Record<string, unknown> {
