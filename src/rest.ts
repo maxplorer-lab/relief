@@ -1,4 +1,61 @@
-case "getlyrics": {
+import { Env } from "./index";
+import { TrackRow } from "./catalog";
+
+function str(url: URL, param: string): string | null {
+  return url.searchParams.get(param);
+}
+
+function parseId(idStr: string | null): { kind: string; n: number } | null {
+  if (!idStr) return null;
+  const parts = idStr.split("-");
+  if (parts.length !== 2) return null;
+  const n = parseInt(parts[1], 10);
+  return isNaN(n) ? null : { kind: parts[0], n };
+}
+
+async function trackById(env: Env, id: number): Promise<TrackRow | null> {
+  return await env.DB.prepare("SELECT * FROM tracks WHERE id = ? LIMIT 1")
+    .bind(id)
+    .first<TrackRow>();
+}
+
+function ok(env: Env, fmt: string, data: Record<string, unknown>) {
+  const payload = {
+    "subsonic-response": {
+      status: "ok",
+      version: env.SERVER_VERSION || "1.16.1",
+      type: env.SERVER_NAME || "Relief",
+      serverVersion: env.SERVER_VERSION || "0.2.0",
+      openSubsonic: true,
+      ...data,
+    },
+  };
+
+  if (fmt === "json") {
+    return new Response(JSON.stringify(payload), {
+      headers: { "Content-Type": "application/json; charset=utf-8" },
+    });
+  }
+
+  // XML Fallback representation
+  return new Response(JSON.stringify(payload), {
+    headers: { "Content-Type": "application/json; charset=utf-8" },
+  });
+}
+
+export async function handleRestRequest(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  const url = new URL(request.url);
+  const pathParts = url.pathname.split("/").filter(Boolean);
+  const actionWithExt = pathParts[pathParts.length - 1] || "";
+  const action = actionWithExt.replace(/\.(view|json|xml)$/, "").toLowerCase();
+  const fmt = str(url, "f") || "json";
+
+  switch (action) {
+    case "ping": {
+      return ok(env, fmt, {});
+    }
+
+    case "getlyrics": {
       const artist = str(url, "artist") || "";
       const title = str(url, "title") || "";
       let lyricsText = "";
@@ -50,3 +107,9 @@ case "getlyrics": {
         },
       });
     }
+
+    default: {
+      return ok(env, fmt, {});
+    }
+  }
+}
