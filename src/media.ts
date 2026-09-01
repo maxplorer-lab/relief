@@ -108,9 +108,8 @@ export async function handleBinary(
       if (!id) throw new SubsonicError(10, "Required parameter missing: id");
       return await streamTrack(request, env, id, method === "download");
     }
-    if (method === "getcoverart") {
-      const id = url.searchParams.get("id");
-      if (!id) throw new SubsonicError(10, "Required parameter missing: id");
+    if (method === "getcoverart" || method === "getavatar") {
+      const id = url.searchParams.get("id") || url.searchParams.get("username") || "cover";
       return await coverArt(env, id);
     }
   } catch (err) {

@@ -2,12 +2,31 @@ import { decodeSubsonicPassword, decryptSecret, md5Hex } from "./crypto";
 import { SubsonicError } from "./respond";
 import type { Env, UserRow } from "./types";
 
-export async function authenticate(url: URL, env: Env): Promise<UserRow> {
+function bearerToken(request: Request | undefined): string | null {
+  const h = request?.headers.get("authorization") || "";
+  if (/^bearer\s+/i.test(h)) return h.replace(/^bearer\s+/i, "").trim();
+  if (/^basic\s+/i.test(h)) {
+    try {
+      const decoded = atob(h.replace(/^basic\s+/i, "").trim());
+      const idx = decoded.indexOf(":");
+      return idx >= 0 ? decoded.slice(idx + 1) : decoded;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function authenticate(url: URL, env: Env, request?: Request): Promise<UserRow> {
   if (!env.AUTH_SECRET) {
     throw new SubsonicError(0, "AUTH_SECRET is not set on this Worker");
   }
 
-  const apiKey = url.searchParams.get("apiKey");
+  const apiKey =
+    url.searchParams.get("apiKey") ||
+    url.searchParams.get("api_key") ||
+    bearerToken(request);
+
   if (apiKey) {
     const row = await env.DB.prepare("SELECT * FROM users WHERE api_key = ?").bind(apiKey).first<UserRow>();
     if (!row) throw new SubsonicError(44, "Invalid API key");
@@ -39,10 +58,10 @@ export async function authenticate(url: URL, env: Env): Promise<UserRow> {
   }
 
   if (p) {
-    if (decodeSubsonicPassword(p) !== password) {
-      throw new SubsonicError(40, "Wrong username or password");
-    }
-    return row;
+    const decoded = decodeSubsonicPassword(p);
+    if (decoded === password) return row;
+    if (row.api_key && (p === row.api_key || decoded === row.api_key)) return row;
+    throw new SubsonicError(40, "Wrong username or password");
   }
 
   throw new SubsonicError(10, "Required parameter missing: p or t/s or apiKey");

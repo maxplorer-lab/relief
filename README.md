@@ -1,97 +1,74 @@
-# Relief relief
+# Relief
 
-Private OpenSubsonic music server for two people. Runs entirely on the Cloudflare free tier: **Workers + D1 + R2**. FLAC and MP3 only. Works with [Tempus](https://f-droid.org/packages/com.eddyizm.degoogled.tempus/) and other Subsonic clients.
+Private music server for two people. **OpenSubsonic 1.16.1** — works with Navidrome clients (Feishin, Tempo, Symfonium, DSub, Ultrasonic, Amperfy) and Subsonic clients (Tempus, play:Sub, Audinaut). FLAC and MP3 only. No transcoding.
 
-No database IDs, bucket names, or R2 tokens are hardcoded. Fill the placeholders, then set secrets.
+Runs on Cloudflare free tier: Workers + D1 + R2.
+
+## This repo is the Worker
+
+`wrangler.toml` lives at the **repository root**. Connect **this** GitHub repo in Cloudflare. Leave **Root directory** blank.
+
+A Grok “export” dump is a different tree (TanStack preview + nested `relief/` folder). That nested folder can show as a dead submodule on GitHub. Do not deploy the export.
+
+```
+wrangler.toml
+migrations/0001_init.sql
+src/           # OpenSubsonic API
+public/        # browser player + first-run Setup
+```
 
 ## 1. Fill named resources
 
-Edit `wrangler.toml`:
+Edit `wrangler.toml` (GitHub pencil is fine):
 
 ```toml
-database_name = "YOUR_D1_DATABASE_NAME"   # the D1 you already created
+database_name = "YOUR_D1_DATABASE_NAME"
 database_id   = "YOUR_D1_DATABASE_ID"
-bucket_name   = "YOUR_R2_BUCKET_NAME"     # both [vars] and [[r2_buckets]]
+bucket_name   = "YOUR_R2_BUCKET_NAME"
 R2_BUCKET_NAME = "YOUR_R2_BUCKET_NAME"
 ```
 
-Bindings used in code (do not rename unless you change `src/types.ts`):
+Bindings in code (do not rename):
 
 | Binding | Resource |
 | --- | --- |
 | `DB` | D1 |
 | `MUSIC` | R2 |
 
-## 2. Secrets (not in git)
+## 2. Deploy from the Cloudflare dashboard
 
-```bash
-npx wrangler secret put AUTH_SECRET      # long random string; encrypts stored passwords
-npx wrangler secret put SETUP_SECRET     # one-time token to create the two users
-```
+Workers → Create → Connect Git → `maxplorer-lab/relief` → Deploy.
 
-Optional — only if you want S3 presigned uploads later. **Streaming does not need an R2 token.** The Worker uses the `MUSIC` binding.
+Then **Settings → Variables and Secrets → Add Secret**:
 
-```bash
-npx wrangler secret put R2_ACCOUNT_ID
-npx wrangler secret put R2_ACCESS_KEY_ID
-npx wrangler secret put R2_SECRET_ACCESS_KEY
-```
+| Name | Value |
+| --- | --- |
+| `AUTH_SECRET` | long random string (encrypts stored passwords) |
+| `SETUP_SECRET` | one-time token to create the two users |
 
-Local dev: copy `.dev.vars.example` to `.dev.vars`.
+Skip `R2_ACCOUNT_ID` / access keys. Streaming uses the `MUSIC` binding.
 
-## 3. Migrate and deploy
+## 3. Create the D1 tables
 
-```bash
-npm install
-npx wrangler d1 migrations apply DB --remote
-npx wrangler deploy
-```
+D1 → your database → **Console** → paste `migrations/0001_init.sql` → Run.
 
-## 4. Create the two users (once)
+## 4. Create the two users
 
-```bash
-curl -X POST https://relief.<you>.workers.dev/api/setup \
-  -H 'content-type: application/json' \
-  -d '{
-    "setupSecret": "YOUR_SETUP_SECRET",
-    "users": [
-      { "username": "you", "password": "pick-a-strong-one", "admin": true },
-      { "username": "plus-one", "password": "another-strong-one" }
-    ]
-  }'
-```
+Open `https://relief.<you>.workers.dev` → **Setup**.
 
-Save the returned `apiKey` values. Tempus accepts username/password **or** an API key.
+Tempus / Feishin / any Subsonic app:
 
-## 5. Tempus
+- Server: `https://relief.<you>.workers.dev`
+- Username / password from Setup
+- Path: empty (API is `/rest/...`)
+- No Cloudflare Access in front of `/rest`
 
-- Server: `https://relief.<you>.workers.dev` (or your custom domain)
-- Username / password from setup
-- Path: leave empty (API is `/rest/...`)
+Auth accepted: password, `enc:` hex password, token (`t`+`s`), OpenSubsonic `apiKey`, `Authorization: Bearer`.
 
-Do **not** put Cloudflare Access in front of `/rest/*`. Native apps cannot pass that login wall.
+## Clients
 
-## 6. Upload music
+XML and JSON (`f=json`). Unknown Subsonic methods return empty ok (Navidrome-style) so old apps do not crash. Original files stream with HTTP Range. `maxBitRate` is ignored.
 
-Admin only. Browser UI at `/` after deploy, or:
+## Upload
 
-```bash
-curl -X POST 'https://relief.<you>.workers.dev/api/ingest?u=you&p=YOUR_PASSWORD' \
-  -F 'file=@album/01-track.flac'
-```
-
-Tags are read from FLAC Vorbis comments / ID3, with filename fallback `Artist - Album - 01 Title.flac`. Max **100 MB per file** through the Worker (free-plan body limit). No transcoding: originals are streamed with HTTP Range.
-
-## Layout
-
-```
-wrangler.toml          # YOUR_* placeholders
-migrations/0001_init.sql
-src/
-  index.ts             # /rest/*  /api/*  static
-  rest.ts              # OpenSubsonic 1.16.1
-  media.ts             # stream / cover / Range
-  api.ts               # setup + ingest
-  auth.ts              # token, password, apiKey
-public/                # listening-room web player
-```
+Browser **Upload** tab after sign-in, or POST `/api/ingest` as the admin. Max 100 MB per file through the Worker.

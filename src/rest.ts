@@ -18,7 +18,7 @@ import {
 } from "./catalog";
 import { albumId, artistId, FOLDER_ID, iso, parseId, playlistId, trackId } from "./ids";
 import { handleBinary } from "./media";
-import { fail, formatOf, ok, SubsonicError } from "./respond";
+import { fail, formatOf, ok, SubsonicError, cors } from "./respond";
 import type { Env, TrackRow, UserRow } from "./types";
 
 function intParam(url: URL, name: string, fallback: number): number {
@@ -43,9 +43,7 @@ async function withStars(env: Env, user: UserRow, tracks: TrackRow[]) {
 }
 
 async function handleMethod(request: Request, env: Env, method: string, url: URL): Promise<Response> {
-  const fmt = formatOf(url);
-  const binary = await handleBinary(request, env, method, url);
-  if (binary) return binary;
+  const fmt = formatOf(url, request);
 
   if (method === "ping") return ok(env, fmt);
   if (method === "getopensubsonicextensions") {
@@ -53,11 +51,16 @@ async function handleMethod(request: Request, env: Env, method: string, url: URL
       openSubsonicExtensions: [
         { name: "apiKeyAuthentication", versions: [1] },
         { name: "formPost", versions: [1] },
+        { name: "transcodeOffset", versions: [1] },
+        { name: "songLyrics", versions: [1] },
       ],
     });
   }
 
-  const user = await authenticate(url, env);
+  const user = await authenticate(url, env, request);
+
+  const binary = await handleBinary(request, env, method, url);
+  if (binary) return binary;
 
   switch (method) {
     case "getlicense":
@@ -598,6 +601,81 @@ async function handleMethod(request: Request, env: Env, method: string, url: URL
     case "getlyrics":
       return ok(env, fmt, { lyrics: { artist: str(url, "artist") || "", title: str(url, "title") || "" } });
 
+    case "getlyricsbysongid": {
+      const id = parseId(str(url, "id"));
+      const track = id?.kind === "tr" ? await trackById(env, id.n) : null;
+      return ok(env, fmt, {
+        lyricsList: {
+          lyrics: track
+            ? [{ title: track.title, artist: track.artist_name || "", lang: "xxx", offset: 0, synced: false, line: [] }]
+            : [],
+        },
+      });
+    }
+
+    case "gettopsongs": {
+      const artist = str(url, "artist") || "";
+      const { results } = await env.DB.prepare(
+        `SELECT t.*, al.name AS album_name, ar.name AS artist_name
+         FROM tracks t JOIN albums al ON al.id = t.album_id JOIN artists ar ON ar.id = t.artist_id
+         WHERE ar.name LIKE ? ORDER BY t.play_count DESC, t.title LIMIT ?`,
+      )
+        .bind(`%${artist}%`, intParam(url, "count", 50))
+        .all<TrackRow>();
+      return ok(env, fmt, { topSongs: { song: await withStars(env, user, results ?? []) } });
+    }
+
+    case "getnowplaying": {
+      const { results } = await env.DB.prepare(
+        `SELECT t.*, al.name AS album_name, ar.name AS artist_name, s.played_at, u.username
+         FROM scrobbles s
+         JOIN tracks t ON t.id = s.track_id
+         JOIN albums al ON al.id = t.album_id
+         JOIN artists ar ON ar.id = t.artist_id
+         JOIN users u ON u.id = s.user_id
+         ORDER BY s.played_at DESC LIMIT 20`,
+      ).all<TrackRow & { played_at: number; username: string }>();
+      const entries = [];
+      for (const row of results ?? []) {
+        const [song] = await withStars(env, user, [row]);
+        entries.push({ ...song, username: row.username, minutesAgo: Math.max(0, Math.round((Date.now() - row.played_at) / 60000)) });
+      }
+      return ok(env, fmt, { nowPlaying: { entry: entries } });
+    }
+
+    case "setrating":
+      return ok(env, fmt);
+
+    case "getbookmarks":
+      return ok(env, fmt, { bookmarks: { bookmark: [] } });
+    case "createbookmark":
+    case "deletebookmark":
+      return ok(env, fmt);
+
+    case "getpodcasts":
+    case "getnewestpodcasts":
+      return ok(env, fmt, { podcasts: { channel: [] } });
+    case "getinternetradiostations":
+      return ok(env, fmt, { internetRadioStations: { internetRadioStation: [] } });
+    case "getshares":
+      return ok(env, fmt, { shares: { share: [] } });
+    case "getvideos":
+      return ok(env, fmt, { videos: { video: [] } });
+    case "getchatmessages":
+      return ok(env, fmt, { chatMessages: { chatMessage: [] } });
+    case "addchatmessage":
+      return ok(env, fmt);
+    case "createuser":
+    case "updateuser":
+    case "deleteuser":
+    case "changepassword":
+      throw new SubsonicError(50, "Use /api/setup for the two users");
+    case "jukeboxcontrol":
+      return ok(env, fmt, { jukeboxStatus: { currentIndex: 0, playing: false, gain: 0.5, position: 0 } });
+    case "getcaptions":
+    case "hls":
+      throw new SubsonicError(0, "Transcoding is not available — stream the original FLAC or MP3");
+
     case "getartistinfo":
     case "getartistinfo2": {
       const id = parseId(str(url, "id"));
@@ -629,32 +707,53 @@ async function handleMethod(request: Request, env: Env, method: string, url: URL
       return ok(env, fmt, { scanStatus: { scanning: false, count: 0 } });
 
     default:
-      throw new SubsonicError(0, `Endpoint not implemented: ${method}`);
+      return ok(env, fmt);
   }
 }
 
 export async function handleRest(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
   if (request.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-methods": "GET, POST, OPTIONS", "access-control-allow-headers": "range, content-type, authorization" } });
+    return new Response(null, { status: 204, headers: cors() });
   }
 
-  if (request.method === "POST" && (request.headers.get("content-type") || "").includes("application/x-www-form-urlencoded")) {
-    const body = await request.text();
-    const params = new URLSearchParams(body);
-    for (const [k, v] of params) url.searchParams.append(k, v);
-  }
+  await mergeBodyParams(request, url);
 
-  const fmt = formatOf(url);
+  const fmt = formatOf(url, request);
+  const callback = url.searchParams.get("callback");
   const part = url.pathname.split("/").filter(Boolean).pop() || "";
   const method = part.replace(/\.view$/i, "").toLowerCase();
-  if (!method) return fail(fmt, 10, "Missing method", env);
+  if (!method || method === "rest") return ok(env, fmt, {}, callback);
 
   try {
     return await handleMethod(request, env, method, url);
   } catch (err) {
-    if (err instanceof SubsonicError) return fail(fmt, err.code, err.message, env);
+    if (err instanceof SubsonicError) return fail(fmt, err.code, err.message, env, callback);
     const message = err instanceof Error ? err.message : "Internal error";
-    return fail(fmt, 0, message, env);
+    return fail(fmt, 0, message, env, callback);
+  }
+}
+
+async function mergeBodyParams(request: Request, url: URL): Promise<void> {
+  if (request.method !== "POST") return;
+  const ct = request.headers.get("content-type") || "";
+  try {
+    if (ct.includes("application/x-www-form-urlencoded")) {
+      const params = new URLSearchParams(await request.text());
+      for (const [k, v] of params) url.searchParams.append(k, v);
+    } else if (ct.includes("multipart/form-data")) {
+      const form = await request.formData();
+      for (const [k, v] of form.entries()) {
+        if (typeof v === "string") url.searchParams.append(k, v);
+      }
+    } else if (ct.includes("application/json")) {
+      const body = (await request.json()) as Record<string, unknown>;
+      for (const [k, v] of Object.entries(body)) {
+        if (Array.isArray(v)) for (const item of v) url.searchParams.append(k, String(item));
+        else if (v !== undefined && v !== null) url.searchParams.append(k, String(v));
+      }
+    }
+  } catch {
+    /* ignore malformed bodies; query string still applies */
   }
 }

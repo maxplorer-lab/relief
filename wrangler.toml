@@ -1,12 +1,16 @@
-# Relief — OpenSubsonic server on Workers + D1 + R2
-# Fill the three YOUR_* placeholders, then:
-#   npx wrangler d1 migrations apply DB --remote
-#   npx wrangler secret put AUTH_SECRET
-#   npx wrangler secret put SETUP_SECRET
-#   npx wrangler secret put R2_ACCOUNT_ID
-#   npx wrangler secret put R2_ACCESS_KEY_ID
-#   npx wrangler secret put R2_SECRET_ACCESS_KEY
-#   npx wrangler deploy
+# Relief — OpenSubsonic + Navidrome-compatible server (Workers + D1 + R2)
+#
+# Cloudflare Git deploy: connect repo maxplorer-lab/relief
+# Root directory: leave EMPTY (this wrangler.toml is at the repo root).
+# Do not connect a "Grok export" dump — that nests this folder and CF cannot find the toml.
+#
+# 1. Fill the three YOUR_* placeholders below (GitHub web editor is enough).
+# 2. Workers → Create → Connect Git → this repo → Deploy.
+# 3. Worker → Settings → Variables and Secrets → add Secrets:
+#      AUTH_SECRET
+#      SETUP_SECRET
+# 4. D1 → Console → paste migrations/0001_init.sql
+# 5. Open https://relief.<you>.workers.dev → Setup tab.
 
 name = "relief"
 main = "src/index.ts"
@@ -15,23 +19,18 @@ compatibility_flags = ["nodejs_compat"]
 
 [vars]
 SERVER_NAME = "Relief"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = "0.2.0"
 MUSIC_FOLDER_NAME = "Music"
-# Optional. Used only for S3-style presigned uploads (large FLACs).
-# Leave empty to upload through the Worker binding (100 MB per file).
-R2_BUCKET_NAME = "resources"
-AUTH_SECRET= "ab4d1cdb2e2af35f6d64818a9be422f4f9d348440d22b5bc0eaf24d4f3f53225"
-SETUP_SECRET= "3e06298f0447e3570034ea1a88c3313d1e18ae21c8860611963742737cadf0e4"
-
+R2_BUCKET_NAME = "YOUR_R2_BUCKET_NAME"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "resources"
-database_id = "fd5ecd36-f185-4dcf-8292-0ec4b41735fe"
+database_name = "YOUR_D1_DATABASE_NAME"
+database_id = "YOUR_D1_DATABASE_ID"
 
 [[r2_buckets]]
 binding = "MUSIC"
-bucket_name = "resources"
+bucket_name = "YOUR_R2_BUCKET_NAME"
 
 [assets]
 directory = "./public"

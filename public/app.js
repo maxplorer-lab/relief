@@ -111,6 +111,42 @@ function render() {
       $("upstatus").textContent = data.ok ? "In library." : data.error || "Failed";
       if (data.ok) await loadAlbums();
     };
+    return;
+  }
+  if (state.view === "setup") {
+    main.innerHTML = `<section class="panel"><h1>First-run setup</h1>
+      <p class="muted">Creates the two Subsonic/Navidrome users. Needs the Worker secret SETUP_SECRET. Only works once.</p>
+      <label class="field"><span>SETUP_SECRET</span><input id="setup-secret" type="password" autocomplete="off"></label>
+      <label class="field"><span>Admin username</span><input id="u1" autocomplete="username"></label>
+      <label class="field"><span>Admin password</span><input id="p1" type="password"></label>
+      <label class="field"><span>Second username (optional)</span><input id="u2"></label>
+      <label class="field"><span>Second password</span><input id="p2" type="password"></label>
+      <button class="primary" id="do-setup">Create users</button>
+      <p class="err" id="setup-err"></p>
+      <p class="muted" id="setup-ok"></p></section>`;
+    $("do-setup").onclick = async () => {
+      const users = [{ username: $("u1").value.trim(), password: $("p1").value, admin: true }];
+      if ($("u2").value.trim()) users.push({ username: $("u2").value.trim(), password: $("p2").value });
+      const res = await fetch("/api/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ setupSecret: $("setup-secret").value, users }),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        $("setup-err").textContent = data.error || "Setup failed";
+        $("setup-ok").textContent = "";
+        return;
+      }
+      $("setup-err").textContent = "";
+      $("setup-ok").textContent = "Users created. Sign in here and in Tempus / Feishin / DSub with those passwords. Save apiKey from the network response if you use key auth.";
+      if (data.users?.[0]) {
+        state.u = data.users[0].username;
+        state.p = $("p1").value;
+        localStorage.setItem("relief.u", state.u);
+        localStorage.setItem("relief.p", state.p);
+      }
+    };
   }
 }
 
@@ -152,6 +188,7 @@ function fmtTime(sec) {
 
 $("nav-library").onclick = () => { state.view = "library"; render(); };
 $("nav-upload").onclick = () => { state.view = "upload"; render(); };
+$("nav-setup").onclick = () => { state.view = "setup"; render(); };
 $("who").onclick = () => { state.view = "login"; render(); };
 $("audio").addEventListener("ended", () => {
   if (state.index < state.queue.length - 1) playQueue(state.queue, state.index + 1);
