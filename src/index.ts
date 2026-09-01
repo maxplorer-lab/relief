@@ -1,30 +1,63 @@
-import { handleApi } from "./api";
-import { cors } from "./respond";
-import { handleRest } from "./rest";
-import type { Env } from "./types";
+// Helper to guarantee a standard primitive string (never a JSON array)
+function toPrimitiveStr(val: unknown): string {
+  if (Array.isArray(val)) return val.join(", ");
+  if (val === null || val === undefined) return "";
+  return String(val);
+}
 
-export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
+export function artistPayload(artist: { id: number; name: string; album_count?: number; cover_key?: string | null }) {
+  return {
+    id: artistId(artist.id),
+    name: toPrimitiveStr(artist.name),
+    albumCount: artist.album_count ?? 0,
+    coverArt: artistId(artist.id),
+  };
+}
 
-    try {
-      if (path === "/rest" || path.startsWith("/rest/")) {
-        return await handleRest(request, env);
-      }
-      if (path === "/api" || path.startsWith("/api/")) {
-        return await handleApi(request, env);
-      }
-      if (env.ASSETS) {
-        return env.ASSETS.fetch(request);
-      }
-      return new Response("Relief", { headers: { "content-type": "text/plain; charset=utf-8", ...cors() } });
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Internal error";
-      return new Response(JSON.stringify({ ok: false, error: message }), {
-        status: 500,
-        headers: { "content-type": "application/json; charset=utf-8", ...cors() },
-      });
-    }
-  },
-};
+export function albumPayload(
+  album: AlbumRow,
+  extra?: { starred?: string },
+) {
+  return {
+    id: albumId(album.id),
+    name: album.name,
+    artist: toPrimitiveStr(album.artist_name),
+    artistId: artistId(album.artist_id),
+    coverArt: albumId(album.id),
+    songCount: album.song_count ?? 0,
+    duration: album.duration_sec ?? 0,
+    created: iso(album.created_at ?? Date.now()),
+    year: album.year ?? undefined,
+    genre: album.genre ?? undefined,
+    playCount: album.play_count ?? 0,
+    starred: extra?.starred,
+  };
+}
+
+export function songPayload(track: TrackRow, starredAt?: number | null) {
+  return {
+    id: trackId(track.id),
+    parent: albumId(track.album_id),
+    isDir: false,
+    title: track.title,
+    album: track.album_name,
+    artist: toPrimitiveStr(track.artist_name),
+    track: track.track_no ?? undefined,
+    year: track.year ?? undefined,
+    genre: track.genre ?? undefined,
+    coverArt: albumId(track.album_id),
+    size: track.size_bytes,
+    contentType: track.content_type || "audio/mpeg",
+    suffix: track.suffix || "mp3",
+    duration: track.duration_sec,
+    bitRate: 320,
+    path: track.r2_key,
+    discNumber: track.disc_no || 1,
+    created: iso(track.created_at || Date.now()),
+    albumId: albumId(track.album_id),
+    artistId: artistId(track.artist_id),
+    type: "music",
+    playCount: track.play_count || 0,
+    starred: starredAt ? iso(starredAt) : undefined,
+  };
+}
