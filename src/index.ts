@@ -1,4 +1,11 @@
 // Helper to guarantee a standard primitive string (never a JSON array)
+// src/index.ts
+export default {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    // Your main routing / handling logic here
+    return handleRequest(request, env, ctx);
+  };
+}
 function toPrimitiveStr(val: unknown): string {
   if (Array.isArray(val)) return val.join(", ");
   if (val === null || val === undefined) return "";
