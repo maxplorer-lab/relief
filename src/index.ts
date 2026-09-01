@@ -1,70 +1,35 @@
-// Helper to guarantee a standard primitive string (never a JSON array)
-// src/index.ts
+import { handleRestRequest } from "./rest";
+import { handleApiRequest } from "./api";
+
+export interface Env {
+  DB: D1Database;
+  MUSIC: R2Bucket;
+  SERVER_NAME?: string;
+  SERVER_VERSION?: string;
+  MUSIC_FOLDER_NAME?: string;
+  R2_BUCKET_NAME?: string;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Your main routing / handling logic here
-    return handleRequest(request, env, ctx);
-  };
-}
-function toPrimitiveStr(val: unknown): string {
-  if (Array.isArray(val)) return val.join(", ");
-  if (val === null || val === undefined) return "";
-  return String(val);
-}
+    const url = new URL(request.url);
+    const path = url.pathname;
 
-export function artistPayload(artist: { id: number; name: string; album_count?: number; cover_key?: string | null }) {
-  return {
-    id: artistId(artist.id),
-    name: toPrimitiveStr(artist.name),
-    albumCount: artist.album_count ?? 0,
-    coverArt: artistId(artist.id),
-  };
-}
+    // Route Subsonic REST requests (e.g., /rest/getLyrics.view)
+    if (path.startsWith("/rest/") || path.startsWith("/rest")) {
+      return handleRestRequest(request, env, ctx);
+    }
 
-export function albumPayload(
-  album: AlbumRow,
-  extra?: { starred?: string },
-) {
-  return {
-    id: albumId(album.id),
-    name: album.name,
-    artist: toPrimitiveStr(album.artist_name),
-    artistId: artistId(album.artist_id),
-    coverArt: albumId(album.id),
-    songCount: album.song_count ?? 0,
-    duration: album.duration_sec ?? 0,
-    created: iso(album.created_at ?? Date.now()),
-    year: album.year ?? undefined,
-    genre: album.genre ?? undefined,
-    playCount: album.play_count ?? 0,
-    starred: extra?.starred,
-  };
-}
+    // Route custom API requests (e.g., /api/ingest)
+    if (path.startsWith("/api/") || path.startsWith("/api")) {
+      return handleApiRequest(request, env, ctx);
+    }
 
-export function songPayload(track: TrackRow, starredAt?: number | null) {
-  return {
-    id: trackId(track.id),
-    parent: albumId(track.album_id),
-    isDir: false,
-    title: track.title,
-    album: track.album_name,
-    artist: toPrimitiveStr(track.artist_name),
-    track: track.track_no ?? undefined,
-    year: track.year ?? undefined,
-    genre: track.genre ?? undefined,
-    coverArt: albumId(track.album_id),
-    size: track.size_bytes,
-    contentType: track.content_type || "audio/mpeg",
-    suffix: track.suffix || "mp3",
-    duration: track.duration_sec,
-    bitRate: 320,
-    path: track.r2_key,
-    discNumber: track.disc_no || 1,
-    created: iso(track.created_at || Date.now()),
-    albumId: albumId(track.album_id),
-    artistId: artistId(track.artist_id),
-    type: "music",
-    playCount: track.play_count || 0,
-    starred: starredAt ? iso(starredAt) : undefined,
-  };
-}
+    // Serve static assets or fallback
+    if (env.ASSETS) {
+      return (env.ASSETS as Fetcher).fetch(request);
+    }
+
+    return new Response("Not Found", { status: 404 });
+  },
+};
