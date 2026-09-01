@@ -21,16 +21,16 @@ compatibility_flags = ["nodejs_compat"]
 SERVER_NAME = "Relief"
 SERVER_VERSION = "0.2.0"
 MUSIC_FOLDER_NAME = "Music"
-R2_BUCKET_NAME = "YOUR_R2_BUCKET_NAME"
+R2_BUCKET_NAME = "resources"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "YOUR_D1_DATABASE_NAME"
-database_id = "YOUR_D1_DATABASE_ID"
+database_name = "resources"
+database_id = "fd5ecd36-f185-4dcf-8292-0ec4b41735fe"
 
 [[r2_buckets]]
 binding = "MUSIC"
-bucket_name = "YOUR_R2_BUCKET_NAME"
+bucket_name = "resources"
 
 [assets]
 directory = "./public"
