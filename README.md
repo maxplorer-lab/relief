@@ -39,12 +39,14 @@ Bindings in code (do not rename):
 
 Workers → Create → Connect Git → `maxplorer-lab/relief` → Deploy.
 
-Then **Settings → Variables and Secrets → Add Secret**:
+Then **Workers → relief → Settings → Variables and Secrets** (not the Git *build* variables). Add type **Secret**:
 
 | Name | Value |
 | --- | --- |
 | `AUTH_SECRET` | long random string (encrypts stored passwords) |
 | `SETUP_SECRET` | one-time token to create the two users |
+
+Redeploy after adding them. Build/CI variables are discarded when the deploy finishes and are **not** visible to `/api/setup`.
 
 Skip `R2_ACCOUNT_ID` / access keys. Streaming uses the `MUSIC` binding.
 

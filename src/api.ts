@@ -55,6 +55,10 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
       users: users?.n ?? 0,
       tracks: tracks?.n ?? 0,
       setupRequired: (users?.n ?? 0) === 0,
+      secrets: {
+        AUTH_SECRET: Boolean(env.AUTH_SECRET),
+        SETUP_SECRET: Boolean(env.SETUP_SECRET),
+      },
     });
   }
 
