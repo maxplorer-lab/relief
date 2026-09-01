@@ -26,8 +26,24 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
     return new Response(null, { status: 204, headers: cors() });
   }
 
-  if (path === "/api/setup" && request.method === "POST") {
-    return setup(request, env);
+  if (path === "/api/setup") {
+    if (request.method === "GET" || request.method === "HEAD") {
+      return jsonResponse(
+        {
+          ok: false,
+          error: "Setup is a POST, or open / and use the Setup tab",
+          post: {
+            setupSecret: "your SETUP_SECRET worker secret",
+            users: [
+              { username: "you", password: "strong", admin: true },
+              { username: "plus-one", password: "strong" },
+            ],
+          },
+        },
+        405,
+      );
+    }
+    if (request.method === "POST") return setup(request, env);
   }
 
   if (path === "/api/health") {
