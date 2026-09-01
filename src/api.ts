@@ -83,11 +83,11 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
         const existing = await env.DB.prepare("SELECT id FROM tracks WHERE r2_key = ?").bind(key).first();
         if (existing) continue;
 
-        const fileObj = await env.MUSIC.get(key);
+        const fileObj = await env.MUSIC.get(key, { range: { offset: 0, length: 512 * 1024 } });
         if (!fileObj) continue;
 
         const headBuf = await fileObj.arrayBuffer();
-        const head = new Uint8Array(headBuf.slice(0, 512 * 1024));
+        const head = new Uint8Array(headBuf);
         const filenameFallback = key.split("/").pop() || "track.mp3";
         const tags = { ...guessFromFilename(filenameFallback), ...parseTags(head) };
 
