@@ -1,7 +1,9 @@
 import { authenticate } from "./auth";
-import { getOrCreateAlbum, getOrCreateArtist, recount, trackById } from "./catalog";
+import { trackById } from "./catalog";
 import { encryptSecret, randomToken } from "./crypto";
 import { contentTypeFor, safeSegment, suffixOf } from "./ids";
+import { upsertTrack, type ParsedMeta } from "./ingest";
+import { handleReconcile } from "./reconcile";
 import { cors, jsonResponse, SubsonicError } from "./respond";
 import { guessFromFilename, parseTags } from "./tags";
 import type { Env } from "./types";
@@ -62,6 +64,11 @@ export async function handleApi(request: Request, env: Env): Promise<Response> {
   if (path === "/api/ingest" && request.method === "POST") {
     if (!user.is_admin) return jsonError(403, "Admin only");
     return ingest(request, env);
+  }
+
+  if (path.startsWith("/api/reconcile/")) {
+    if (!user.is_admin) return jsonError(403, "Admin only");
+    return handleReconcile(request, env, path);
   }
 
   if (path === "/api/library") {
@@ -131,65 +138,24 @@ async function ingest(request: Request, env: Env): Promise<Response> {
   const genre = String(form.get("genre") || tags.genre || "") || null;
   const duration = Number(form.get("duration") || tags.duration || 0) || 0;
 
-  const artistId = await getOrCreateArtist(env, artist);
-  const albumIdNum = await getOrCreateAlbum(env, artistId, album, year, genre);
-
   const key = `music/${safeSegment(artist)}/${safeSegment(album)}/${String(trackNo || 0).padStart(2, "0")} - ${safeSegment(title)}.${suffix}`;
 
-  await env.MUSIC.put(key, file.stream(), {
+  const putResult = await env.MUSIC.put(key, file.stream(), {
     httpMetadata: { contentType: contentTypeFor(suffix) },
     customMetadata: { title, artist, album },
   });
 
-  let coverKey: string | null = null;
-  const cover = form.get("cover");
-  if (cover instanceof File) {
-    coverKey = `covers/al-${albumIdNum}`;
-    await env.MUSIC.put(coverKey, cover.stream(), {
-      httpMetadata: { contentType: cover.type || "image/jpeg" },
-    });
+  const uploadedCover = form.get("cover");
+  let cover: { bytes: Uint8Array; mime: string } | undefined;
+  if (uploadedCover instanceof File) {
+    cover = { bytes: new Uint8Array(await uploadedCover.arrayBuffer()), mime: uploadedCover.type || "image/jpeg" };
   } else if (tags.cover) {
-    coverKey = `covers/al-${albumIdNum}`;
-    await env.MUSIC.put(coverKey, tags.cover.bytes, {
-      httpMetadata: { contentType: tags.cover.mime },
-    });
-  }
-  if (coverKey) {
-    await env.DB.prepare("UPDATE albums SET cover_key = COALESCE(cover_key, ?) WHERE id = ?").bind(coverKey, albumIdNum).run();
-    await env.DB.prepare("UPDATE artists SET cover_key = COALESCE(cover_key, ?) WHERE id = ?").bind(coverKey, artistId).run();
+    cover = { bytes: tags.cover.bytes, mime: tags.cover.mime };
   }
 
-  const existing = await env.DB.prepare("SELECT id FROM tracks WHERE r2_key = ?").bind(key).first<{ id: number }>();
-  if (existing) {
-    await env.DB.prepare(
-      `UPDATE tracks SET title=?, track_no=?, year=?, genre=?, duration_sec=?, size_bytes=?, suffix=?, content_type=? WHERE id=?`,
-    )
-      .bind(title, trackNo, year, genre, duration, file.size, suffix, contentTypeFor(suffix), existing.id)
-      .run();
-  } else {
-    await env.DB.prepare(
-      `INSERT INTO tracks (album_id, artist_id, title, track_no, disc_no, year, genre, duration_sec, size_bytes, suffix, content_type, r2_key, play_count, created_at)
-       VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, 0, ?)`,
-    )
-      .bind(
-        albumIdNum,
-        artistId,
-        title,
-        trackNo,
-        year,
-        genre,
-        duration,
-        file.size,
-        suffix,
-        contentTypeFor(suffix),
-        key,
-        Date.now(),
-      )
-      .run();
-  }
+  const meta: ParsedMeta = { title, artist, album, track: trackNo, year, genre, duration };
+  const result = await upsertTrack(env, key, suffix, file.size, putResult?.etag ?? null, meta, cover);
 
-  await recount(env, artistId, albumIdNum);
-  const row = await env.DB.prepare("SELECT id FROM tracks WHERE r2_key = ?").bind(key).first<{ id: number }>();
-  const track = row ? await trackById(env, row.id) : null;
+  const track = await trackById(env, result.trackId);
   return jsonResponse({ ok: true, track });
 }
