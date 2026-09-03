@@ -119,8 +119,8 @@ export async function upsertTrack(
 
 /** `music/Artist/Album/01 - Title.ext` — the same layout /api/ingest already writes. */
 function hintsFromKey(key: string): { artist?: string; album?: string; title?: string; track?: number } {
-  const parts = key.split("/");
-  if (parts[0] !== "music" || parts.length < 4) return {};
+  const parts = key.split("/").filter(Boolean);
+  if (parts.length < 2) return {};
   const decode = (s: string) => {
     try {
       return decodeURIComponent(s);
@@ -128,16 +128,15 @@ function hintsFromKey(key: string): { artist?: string; album?: string; title?: s
       return s;
     }
   };
-  const artist = decode(parts[1]);
-  const album = decode(parts[2]);
-  const filename = decode(parts.slice(3).join("/")).replace(/\.[^.]+$/, "");
+  const filename = decode(parts[parts.length - 1]).replace(/\.[^.]+$/, "");
+  const album = parts.length >= 2 ? decode(parts[parts.length - 2]) : undefined;
+  const artist = parts.length >= 3 ? decode(parts[parts.length - 3]) : undefined;
   const m = /^(\d+)\s*-\s*(.+)$/.exec(filename);
   if (m) {
     return { artist, album, title: m[2].trim(), track: parseInt(m[1], 10) || undefined };
   }
   return { artist, album, title: filename };
 }
-
 /**
  * Turns a bare R2 key into catalog rows: reads only the head bytes (matches
  * /api/ingest's own limit), parses embedded tags, falls back to the R2 path
