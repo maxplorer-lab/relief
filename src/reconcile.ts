@@ -60,7 +60,6 @@ async function stepJob(env: Env, jobId: number): Promise<Response> {
   }
 
   const listing = await env.MUSIC.list({
-    prefix: "music/",
     cursor: job.r2_cursor || undefined,
     limit: BATCH_SIZE,
   });
