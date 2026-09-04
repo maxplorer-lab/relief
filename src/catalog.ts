@@ -83,6 +83,13 @@ export async function trackById(env: Env, id: number): Promise<TrackRow | null> 
   return env.DB.prepare(`${TRACK_SELECT} WHERE t.id = ?`).bind(id).first<TrackRow>();
 }
 
+/** Exact-match lookup for the classic getLyrics endpoint, which only supplies artist/title strings. */
+export async function findTrackByArtistTitle(env: Env, artist: string, title: string): Promise<TrackRow | null> {
+  return env.DB.prepare(`${TRACK_SELECT} WHERE ar.name = ? AND t.title = ? LIMIT 1`)
+    .bind(artist, title)
+    .first<TrackRow>();
+}
+
 export async function tracksByAlbum(env: Env, albumIdNum: number): Promise<TrackRow[]> {
   const { results } = await env.DB.prepare(
     `${TRACK_SELECT} WHERE t.album_id = ? ORDER BY t.disc_no, t.track_no, t.title`,
