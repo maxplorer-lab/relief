@@ -7,6 +7,7 @@ import {
   allArtists,
   artistById,
   artistPayload,
+  findTrackByArtistTitle,
   getStarSet,
   searchAlbums,
   searchArtists,
@@ -17,6 +18,7 @@ import {
   tracksByAlbum,
 } from "./catalog";
 import { albumId, artistId, FOLDER_ID, iso, parseId, playlistId, trackId } from "./ids";
+import { getOrFetchLyrics, parseLrc } from "./lyrics";
 import { handleBinary } from "./media";
 import { fail, formatOf, ok, SubsonicError } from "./respond";
 import type { Env, TrackRow, UserRow } from "./types";
@@ -605,8 +607,53 @@ async function handleMethod(request: Request, env: Env, method: string, url: URL
       return ok(env, fmt);
     }
 
-    case "getlyrics":
-      return ok(env, fmt, { lyrics: { artist: str(url, "artist") || "", title: str(url, "title") || "" } });
+    case "getlyrics": {
+      const artistName = str(url, "artist") || "";
+      const titleName = str(url, "title") || "";
+      const track = artistName && titleName ? await findTrackByArtistTitle(env, artistName, titleName) : null;
+      let value = "";
+      if (track) {
+        const lyrics = await getOrFetchLyrics(env, track.id, artistName, titleName, track.album_name, track.duration_sec);
+        value = lyrics?.plain || (lyrics?.synced ? parseLrc(lyrics.synced).map((l) => l.value).join("\n") : "");
+      }
+      return ok(env, fmt, { lyrics: { artist: artistName, title: titleName, value } });
+    }
+
+    case "getlyricsbysongid": {
+      const id = parseId(str(url, "id"));
+      const track = id?.kind === "tr" ? await trackById(env, id.n) : null;
+      if (!track) return ok(env, fmt, { lyricsList: {} });
+
+      const lyrics = await getOrFetchLyrics(
+        env,
+        track.id,
+        track.artist_name || "",
+        track.title,
+        track.album_name,
+        track.duration_sec,
+      );
+      if (!lyrics) return ok(env, fmt, { lyricsList: {} });
+
+      const synced = lyrics.synced ? parseLrc(lyrics.synced) : null;
+      const line =
+        synced && synced.length
+          ? synced.map((l) => ({ start: l.start ?? undefined, value: l.value }))
+          : (lyrics.plain || "").split(/\r?\n/).filter(Boolean).map((value) => ({ value }));
+
+      return ok(env, fmt, {
+        lyricsList: {
+          structuredLyrics: [
+            {
+              lang: "und",
+              synced: !!synced?.length,
+              displayArtist: track.artist_name,
+              displayTitle: track.title,
+              line,
+            },
+          ],
+        },
+      });
+    }
 
     case "getartistinfo":
     case "getartistinfo2": {
